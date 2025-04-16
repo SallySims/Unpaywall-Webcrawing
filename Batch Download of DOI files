@@ -1,0 +1,71 @@
+#### Batch Download of doi files from Unpaywall
+
+## Import the file containing doi links or IDs
+FDoi=pd.read_csv('PDFs/OpenAlex1.csv')
+FDoi
+
+### Drop Na Doi
+FDoi1=FDoi.dropna(subset=['doi'])
+FDoi1
+
+### Selecting only the doi column
+Doionly=FDoi1['doi']
+Doionly
+
+## Convert to Excel file NOT CSV
+Doionly.to_excel('/content/Doionly.xlsx')## svaing in content drive because code was executed with Colab
+
+### Downloading from unpaywall
+import requests
+!pip install openpyxl ## install this if not already installed
+import openpyxl
+from urllib.parse import quote, urlencode
+
+## Creating the credentials & configuration
+YOUR_EMAIL='YOUR EMAIL@gmail.com'  ## Any provider is acceptable
+EXCEL_FILE=('/content/Doionly.xlsx')
+DOI_COLUMN='doi' # Defining the DOI_COLUMN variable here
+DOWNLOAD_FOLDER=('/content/PDFs')
+LOG_FILE=('/content/PDFs/download_log.csv')
+
+### Setup  the Download ###
+## making a working directory
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+df = pd.read_excel(EXCEL_FILE)
+log = []
+
+#### Creating Main Loop #####
+for index, row in df.iterrows():
+    doi = row[DOI_COLUMN]
+    if pd.isna(doi):
+        continue
+
+    doi_encoded = quote(doi)
+    url = f"https://api.unpaywall.org/v2/{doi_encoded}?email={YOUR_EMAIL}"  ### URL from which the Extraction was made
+
+    try:
+        response = requests.get(url)
+        data = response.json()
+
+        if data.get("best_oa_location") and data["best_oa_location"].get("url_for_pdf"):
+            pdf_url = data["best_oa_location"]["url_for_pdf"]
+            filename = os.path.join(DOWNLOAD_FOLDER, f"{doi.replace('/', '_')}.pdf")
+
+            pdf_response = requests.get(pdf_url)
+            with open(filename, "wb") as f:
+                f.write(pdf_response.content)
+
+            print(f"No Downloaded: {filename}")
+            log.append({"DOI": doi, "Status": "Downloaded", "PDF_URL": pdf_url})
+        else:
+            print(f" No PDF not found for DOI: {doi}")
+            log.append({"DOI": doi, "Status": "Not Found", "PDF_URL": None})
+
+    except Exception as e:
+        print(f"⚠️ Error for DOI {doi}: {e}")
+        log.append({"DOI": doi, "Status": "Error", "PDF_URL": None})
+
+#### Save Logged Extraction ###
+pd.DataFrame(log).to_csv(LOG_FILE, index=False)
+print(f"\n📄 Log saved to {LOG_FILE}")
+
